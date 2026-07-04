@@ -43,6 +43,14 @@ If you know a website requires rendering JavaScript to even generate page titles
 ./ripvid -d https://example.com/dynamic-video-page
 ```
 
+### Specifying Output Directory
+
+By default, downloads are saved to `~/Videos/ripvid`. You can specify a custom output directory using the `-o` or `--output` flag:
+
+```bash
+./ripvid -o /path/to/my/downloads https://example.com/video-page
+```
+
 ## How It Works
 
 1. **Title Extraction:** The webpage's document or OpenGraph title is retrieved and sanitized (e.g., `Video: How to Code?` becomes `Video_ How to Code.mp4`).

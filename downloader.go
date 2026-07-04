@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -36,16 +37,22 @@ func SanitizeFilename(title string) string {
 	return safe
 }
 
-// DownloadVideo downloads the stream using yt-dlp
-func DownloadVideo(m3u8URL, title string) error {
+// DownloadVideo downloads the stream using yt-dlp to the specified output directory.
+func DownloadVideo(m3u8URL, title, outputDir string) error {
 	safeTitle := SanitizeFilename(title)
-	outputFile := safeTitle + ".mp4"
+	
+	// Create output directory if it doesn't exist
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	outputPath := filepath.Join(outputDir, safeTitle+".mp4")
 
 	fmt.Printf("Downloading stream: %s\n", m3u8URL)
-	fmt.Printf("Saving as: %s\n", outputFile)
+	fmt.Printf("Saving as: %s\n", outputPath)
 
-	// Build cmd: yt-dlp -o "Title.mp4" "m3u8_url"
-	cmd := exec.Command("yt-dlp", "-o", outputFile, m3u8URL)
+	// Build cmd: yt-dlp -o "path/to/title.mp4" "m3u8_url"
+	cmd := exec.Command("yt-dlp", "-o", outputPath, m3u8URL)
 
 	// Stream stdout and stderr directly to our CLI's stdout/stderr so the user can see progress
 	cmd.Stdout = os.Stdout

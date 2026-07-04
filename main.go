@@ -4,12 +4,18 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
 func main() {
 	dynamicFlag := flag.Bool("dynamic", false, "Force using dynamic scraper (headless browser)")
 	flag.BoolVar(dynamicFlag, "d", false, "Force using dynamic scraper (headless browser)")
+
+	outputDirFlag := flag.String("output", "", "Directory to save downloaded videos (default: ~/Videos/ripvid)")
+	flag.StringVar(outputDirFlag, "o", "", "Directory to save downloaded videos (default: ~/Videos/ripvid)")
+
 	flag.Parse()
 
 	args := flag.Args()
@@ -20,6 +26,23 @@ func main() {
 	}
 
 	pageURL := args[0]
+
+	// Resolve output directory
+	outputDir := *outputDirFlag
+	if outputDir == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			outputDir = filepath.Join("Videos", "ripvid")
+		} else {
+			outputDir = filepath.Join(homeDir, "Videos", "ripvid")
+		}
+	} else if strings.HasPrefix(outputDir, "~/") {
+		homeDir, err := os.UserHomeDir()
+		if err == nil {
+			outputDir = filepath.Join(homeDir, outputDir[2:])
+		}
+	}
+
 	var result *ScrapeResult
 	var err error
 
@@ -61,7 +84,7 @@ func main() {
 	// Download the first one
 	targetM3U8 := result.M3U8s[0]
 	fmt.Printf("\nStarting download for stream [1]...\n")
-	err = DownloadVideo(targetM3U8, title)
+	err = DownloadVideo(targetM3U8, title, outputDir)
 	if err != nil {
 		fmt.Printf("Error downloading video: %v\n", err)
 		os.Exit(1)

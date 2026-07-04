@@ -7,6 +7,12 @@ A Go-based command-line tool designed to extract `.m3u8` video stream URLs from 
 - **Dual-Mode Scraper:**
   - **Static Scraper:** Fetches the webpage's HTML directly and performs high-speed regex-based extraction of absolute/relative `.m3u8` URLs and metadata titles.
   - **Dynamic Scraper (Chromedp Fallback):** Automatically launches a headless Chrome/Chromium instance to execute JavaScript, monitor network traffic, and capture dynamic/deferred `.m3u8` requests.
+- **Homepage Mode:**
+  - Scour index/homepages to find candidate video detail links using the `--home` / `-h` flag.
+  - Customize link extraction target using CSS selectors with `--selector` / `-s`.
+  - Filter candidate links using regex patterns via `--filter` / `-f`.
+- **Interactive Selection Prompt:**
+  - Prompt user to pick which crawled videos to download. Supports ranges (e.g. `1-5`), comma-separated numbers (e.g. `1,3,5-7`), individual selections, or `all`.
 - **Smart Title Extraction:** Automatically fetches titles from standard `<title>` tags, `og:title` metadata, or `twitter:title` metadata to name the output file.
 - **Safe Filename Sanitization:** Sanitizes titles to remove characters that are illegal or problematic in OS filesystems.
 - **Subprocess Integration:** Runs `yt-dlp` inside a subprocess, streaming download progress (speed, size, eta) directly to your terminal.
@@ -15,7 +21,7 @@ A Go-based command-line tool designed to extract `.m3u8` video stream URLs from 
 
 1. **Go** (to compile the project)
 2. [**yt-dlp**](https://github.com/yt-dlp/yt-dlp) installed and available in your system path
-3. **Chrome or Chromium** installed (required for the dynamic scraper fallback)
+3. **Chrome or Chromium** installed (required for the dynamic scraper fallback and dynamic link extraction)
 
 ## Installation
 
@@ -49,6 +55,38 @@ By default, downloads are saved to `~/Videos/ripvid`. You can specify a custom o
 
 ```bash
 ./ripvid -o /path/to/my/downloads https://example.com/video-page
+```
+
+### Homepage Mode
+
+To scour a homepage for candidate video pages and download selected items:
+
+```bash
+./ripvid --home https://example.com/videos
+```
+
+#### Filtering Candidate URLs
+You can filter found candidate video URLs using a regular expression with `-f` or `--filter`:
+
+```bash
+./ripvid -h -f "watch\?v=" https://example.com/videos
+```
+
+#### Custom CSS Selector
+To extract video URLs from specific elements on the page (for instance, links inside a specific card container):
+
+```bash
+./ripvid -h -s ".video-grid a" https://example.com/videos
+```
+
+Once candidate URLs are fetched, you will be prompted to select which videos to download:
+```
+Found 10 video page candidate(s):
+  [1] https://example.com/videos/page1
+  [2] https://example.com/videos/page2
+  ...
+
+Enter selection (e.g. '1', '1-5', '1,3,5-7', or 'all' / empty): 1,3-5
 ```
 
 ## How It Works

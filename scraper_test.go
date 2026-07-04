@@ -144,3 +144,140 @@ func TestSanitizeFilename(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractLinksFromHTML(t *testing.T) {
+	baseURL, _ := url.Parse("https://example.com/home")
+	htmlContent := `
+		<html>
+			<body>
+				<a href="/video/1">Video 1</a>
+				<a href="https://example.com/video/2">Video 2</a>
+				<a href="https://external.com/video/3">External</a>
+				<a href="#section">Anchor</a>
+				<a href="javascript:void(0)">JS Link</a>
+				<a href="">Empty Link</a>
+			</body>
+		</html>
+	`
+	want := []string{
+		"https://example.com/video/1",
+		"https://example.com/video/2",
+		"https://external.com/video/3",
+	}
+	got := extractLinksFromHTML(htmlContent, baseURL)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("extractLinksFromHTML() = %v, want %v", got, want)
+	}
+}
+
+func TestFilterVideoLinks(t *testing.T) {
+	baseURL, _ := url.Parse("https://example.com")
+	links := []string{
+		"https://example.com/video/1",
+		"https://example.com/video/2",
+		"https://example.com/video/1", // duplicate
+		"https://external.com/video/1", // different host
+		"https://example.com/assets/logo.png", // asset
+		"https://example.com/video/3.mp4", // asset
+		"https://example.com/about",
+	}
+
+	t.Run("No Regex Filter", func(t *testing.T) {
+		want := []string{
+			"https://example.com/video/1",
+			"https://example.com/video/2",
+			"https://example.com/about",
+		}
+		got := FilterVideoLinks(links, baseURL, "")
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("FilterVideoLinks() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("With Regex Filter", func(t *testing.T) {
+		want := []string{
+			"https://example.com/video/1",
+			"https://example.com/video/2",
+		}
+		got := FilterVideoLinks(links, baseURL, `^https://example\.com/video/\d+$`)
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("FilterVideoLinks() = %v, want %v", got, want)
+		}
+	})
+}
+
+func TestParseSelection(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		max     int
+		want    []int
+		wantErr bool
+	}{
+		{
+			name:    "Empty select all",
+			input:   "",
+			max:     5,
+			want:    []int{0, 1, 2, 3, 4},
+			wantErr: false,
+		},
+		{
+			name:    "all keyword",
+			input:   "all",
+			max:     3,
+			want:    []int{0, 1, 2},
+			wantErr: false,
+		},
+		{
+			name:    "single numbers",
+			input:   "1,3",
+			max:     5,
+			want:    []int{0, 2},
+			wantErr: false,
+		},
+		{
+			name:    "range of numbers",
+			input:   "2-4",
+			max:     5,
+			want:    []int{1, 2, 3},
+			wantErr: false,
+		},
+		{
+			name:    "mix of numbers and ranges",
+			input:   "1, 3-5, 2",
+			max:     6,
+			want:    []int{0, 1, 2, 3, 4},
+			wantErr: false,
+		},
+		{
+			name:    "invalid range format",
+			input:   "1-2-3",
+			max:     5,
+			wantErr: true,
+		},
+		{
+			name:    "index out of bounds positive",
+			input:   "6",
+			max:     5,
+			wantErr: true,
+		},
+		{
+			name:    "index out of bounds zero or negative",
+			input:   "0",
+			max:     5,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseSelection(tt.input, tt.max)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ParseSelection() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ParseSelection() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

@@ -220,3 +220,167 @@ func ScrapePageDynamic(pageURL string) (*ScrapeResult, error) {
 		M3U8s: m3u8s,
 	}, nil
 }
+
+// ScrapeLinks extracts all links from the homepage.
+// If selector is empty, it attempts static link extraction first and falls back to dynamic.
+// If selector is specified, it uses the dynamic scraper directly.
+func ScrapeLinks(pageURL string, selector string) ([]string, error) {
+	if selector == "" {
+		parsedURL, err := url.Parse(pageURL)
+		if err == nil {
+			htmlContent, err := fetchStaticHTML(pageURL)
+			if err == nil {
+				links := extractLinksFromHTML(htmlContent, parsedURL)
+				if len(links) > 0 {
+					return links, nil
+				}
+			}
+		}
+	}
+	return ScrapeLinksDynamic(pageURL, selector)
+}
+
+func fetchStaticHTML(pageURL string) (string, error) {
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+	req, err := http.NewRequest("GET", pageURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.5")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("bad status code: %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+func extractLinksFromHTML(htmlContent string, baseURL *url.URL) []string {
+	hrefRe := regexp.MustCompile(`(?i)<a\s+[^>]*href=["']([^"']+)["']`)
+	matches := hrefRe.FindAllStringSubmatch(htmlContent, -1)
+	
+	var links []string
+	for _, match := range matches {
+		if len(match) > 1 {
+			rawURL := strings.TrimSpace(match[1])
+			if rawURL == "" || strings.HasPrefix(rawURL, "javascript:") || strings.HasPrefix(rawURL, "#") {
+				continue
+			}
+			u, err := url.Parse(rawURL)
+			if err != nil {
+				continue
+			}
+			resolved := baseURL.ResolveReference(u).String()
+			links = append(links, resolved)
+		}
+	}
+	return links
+}
+
+// ScrapeLinksDynamic extracts all links matching the CSS selector from the homepage using ChromeDP.
+func ScrapeLinksDynamic(pageURL string, selector string) ([]string, error) {
+	if selector == "" {
+		selector = "a"
+	}
+	
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.NoSandbox,
+	)
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	defer allocCancel()
+
+	ctx, cancel := chromedp.NewContext(allocCtx)
+	defer cancel()
+
+	ctx, cancel = context.WithTimeout(ctx, 35*time.Second)
+	defer cancel()
+
+	var links []string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(pageURL),
+		chromedp.Sleep(2*time.Second),
+		chromedp.Evaluate(`
+			Array.from(document.querySelectorAll("` + selector + `"))
+				.map(a => a.href)
+				.filter(href => href && !href.startsWith('javascript:') && !href.startsWith('#'))
+		`, &links),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("dynamic link scraping failed: %w", err)
+	}
+	return links, nil
+}
+
+// FilterVideoLinks filters and de-duplicates candidate URLs.
+func FilterVideoLinks(links []string, baseURL *url.URL, regexFilter string) []string {
+	var filtered []string
+	seen := make(map[string]bool)
+	
+	var filterRe *regexp.Regexp
+	if regexFilter != "" {
+		var err error
+		filterRe, err = regexp.Compile(regexFilter)
+		if err != nil {
+			fmt.Printf("Warning: invalid filter regex: %v. Ignoring filter.\n", err)
+			filterRe = nil
+		}
+	}
+	
+	ignoredSuffixes := []string{
+		".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico",
+		".css", ".js", ".json", ".xml",
+		".pdf", ".zip", ".tar.gz", ".rar", ".7z",
+		".mp4", ".mkv", ".avi", ".mov", ".mp3", ".wav",
+	}
+
+	for _, link := range links {
+		u, err := url.Parse(link)
+		if err != nil {
+			continue
+		}
+		
+		if u.Host != baseURL.Host {
+			continue
+		}
+		
+		u.Fragment = ""
+		normalized := u.String()
+		
+		if seen[normalized] {
+			continue
+		}
+		
+		lowerPath := strings.ToLower(u.Path)
+		isAsset := false
+		for _, suffix := range ignoredSuffixes {
+			if strings.HasSuffix(lowerPath, suffix) {
+				isAsset = true
+				break
+			}
+		}
+		if isAsset {
+			continue
+		}
+		
+		if filterRe != nil && !filterRe.MatchString(normalized) {
+			continue
+		}
+		
+		seen[normalized] = true
+		filtered = append(filtered, normalized)
+	}
+	
+	return filtered
+}
